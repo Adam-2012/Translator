@@ -1,0 +1,224 @@
+--[[ **************** ]]--
+--[[ Chat Translator - Nov30th, HOHO`` ]]--
+--[[ **************** ]]--
+
+
+-- Define plugin variables
+PLUGIN.Title = "HOHO`` Chat Translator"
+PLUGIN.Description = "Translate all the chat langauges to players' one"
+PLUGIN.Author = "Nov30th, HOHO``"
+PLUGIN.Version = "1.04"
+
+local ServerName = "Oxide"
+local UserLanguageSet = {}
+local LastWords = ""
+local LastTranslatedWords = ""
+
+local TranslatorAllToEng = ""
+
+function PLUGIN:OnUserChat(netuser, name, msg)
+  if (msg:sub(1, 1) == "/") then
+      return
+  end
+  local userid = rust.GetUserID(netuser)
+  if (string.find(msg,"=") ~= nil or string.find(msg,"%%") ~= nil or string.find(msg,"&") ~= nil or string.find(msg,"\"") ~= nil or string.find(msg,"\\") ~= nil) then
+    --rust.BroadcastChat( "HOHO`` Translator", "BAD WORDS" )
+    return
+  end
+  
+  if (LastWords == msg) then return end
+  
+  if (string.len(msg) <= 2) then return end
+  
+  LastWords = msg
+  LastTranslatedWords = msg
+  requestUrl = TranslatorAllToEng .. msg
+  --local requestUrl = TranslatorAllToEngB .. self:escape(msg) .. TranslatorAllToEngE
+  --print (requestUrl)
+  --print (msg)
+  --rust.BroadcastChat( "HOHO`` Translator", "STARTING TRANSLATE" )
+  webrequest.Send( requestUrl, function( code, response )
+    self:callbackTranslator( code, response )
+  end )
+
+  local requestCNUrl = TranslatorAllToCN .. msg
+  webrequest.Send( requestCNUrl, function( code, response )
+    self:callbackTranslatorCN( code, response )
+  end )
+
+  local requestRUUrl = TranslatorAllToRU .. msg
+  webrequest.Send( requestRUUrl, function( code, response )
+    self:callbackTranslatorRU( code, response )
+  end )
+
+end
+
+
+
+
+function PLUGIN:BroadcastSepc(language, sourceLanguage, message)
+  local players = rust.GetAllNetUsers()
+  for key,netuser in pairs(players) do
+  --local count = pclist.Count
+  --for i=0, count - 1 do
+    repeat
+      --local value = pclist[i].netuser -- PlayerClientAll()[i].netuser
+      if (netuser == nil) then
+        print ("Translator BroadcastSepc Error!")
+        break
+      end
+      
+      
+      local netuserID = rust.GetUserID( netuser )
+      if ( netuserID == nil or netuserID ==0) then
+        print("Translator BroadcastSepc Error! CAN NOT GET USER ID!")
+        break
+      end
+      
+      if (UserLanguageSet[netuserID] == nil) then
+        rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "Translator Enabled. If you don't need it, type /dt in chat to disable the translate." .. "\"")
+        rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "If you need to enable translator trans to other languages, type /translator in chat." .. "\"")
+        --rust.RunClientCommand( netuser, "chat.add \"" .. " Server\" \"" .. "启动自动翻译系统，请在聊天框打/cn" .. "\"")
+        UserLanguageSet[netuserID] = "EN"
+      end
+      
+      if (UserLanguageSet[netuserID] == language) then
+        rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. util.QuoteSafe(message) .. "\"")
+      end
+    until true
+  end    
+end
+
+function PLUGIN:SendChatToUser(netuser, name,  message)
+  rust.RunClientCommand( netuser, "chat.add \"" .. util.QuoteSafe(name) .. "\" \"" .. util.QuoteSafe(message) .. "\"")
+end
+
+function PLUGIN:Init()
+  TranslatorAllToEngB = "http://api.microsofttranslator.com/v2/ajax.svc/TranslateArray2?appId=%22Tvo_pobD2QDFpEUCHvucZd1E1-U4QcTD5epFvXjLEUxiGlYAKsj-vBfIEtvKZA6fe%22&texts=[%22"
+  TranslatorAllToEng = "http://translate.google.cn/translate_a/t?client=t&sl=auto&tl=en&hl=auto&sc=2&ie=UTF-8&oe=UTF-8&prev=enter&ssel=0&tsel=0&q="
+  TranslatorAllToCNB = "http://api.microsofttranslator.com/v2/ajax.svc/TranslateArray2?appId=%22T74BT_d-vPEzM-AWk1lqwX3ZxQXSqSOEacLoX5o6K7WY*%22&texts=[%22"
+  TranslatorAllToCN = "http://translate.google.cn/translate_a/t?client=t&sl=auto&tl=zh-CN&hl=auto&sc=2&ie=UTF-8&oe=UTF-8&prev=enter&ssel=0&tsel=0&q="
+  TranslatorAllToRU = "http://translate.google.cn/translate_a/t?client=t&sl=auto&tl=ru&hl=auto&sc=2&ie=UTF-8&oe=UTF-8&prev=enter&ssel=0&tsel=0&q="
+  TranslatorAllToCNE = "%22]&from=%22%22&to=%22zh-chs%22"
+  TranslatorAllToEngE = "%22]&from=%22%22&to=%22en%22"
+	self:AddChatCommand( "EN", self.SetEnglish )
+  self:AddChatCommand( "en", self.SetEnglish )
+	self:AddChatCommand( "cn", self.SetChinese )
+  self:AddChatCommand( "CN", self.SetChinese )
+  self:AddChatCommand( "ru", self.SetRU )
+  self:AddChatCommand( "RU", self.SetRU )
+  self:AddChatCommand( "dt", self.DisableTranslate )
+  self:AddChatCommand( "DT", self.DisableTranslate )  
+  self:AddChatCommand( "translator", self.Help )
+
+end
+
+function PLUGIN:callbackTranslator(status, responseText)
+  if (responseText ~= nil and string.find(responseText,"[[][[][[]\"")~=nil) then
+    local _pos ,endPos = string.find(responseText, "\"", 5)
+    if (endPos ~= nil and endPos >5+1) then
+      translatedMsg = string.sub(responseText, 5, endPos -1)
+      if (translatedMsg ~= LastTranslatedWords) then
+        self:BroadcastSepc("EN", "", translatedMsg)
+      else
+      end
+    end
+  else
+    print ("Translate response not 200")
+  end
+end
+
+function PLUGIN:callbackTranslatorRU(status, responseText)
+  if (responseText ~= nil and string.find(responseText,"[[][[][[]\"")~=nil) then
+    local _pos ,endPos = string.find(responseText, "\"", 5)
+    if (endPos ~= nil and endPos >5+1) then
+      translatedMsg = string.sub(responseText, 5, endPos -1)
+      if (translatedMsg ~= LastTranslatedWords) then
+        self:BroadcastSepc("RU", "", translatedMsg)
+      else
+      end
+    end
+  else
+    print ("Translate response not 200")
+  end
+end
+
+function PLUGIN:callbackTranslatorCN(status, responseText)
+  if (responseText ~= nil and string.find(responseText,"[[][[][[]\"")~=nil) then
+    local _pos ,endPos = string.find(responseText, "\"", 5)
+    if (endPos ~= nil and endPos >5+1) then
+      translatedMsg = string.sub(responseText, 5, endPos -1)
+      if (translatedMsg ~= LastTranslatedWords) then
+        self:BroadcastSepc("CN", "", translatedMsg)
+      else
+      end
+    end
+  else
+    print ("Translate response not 200 CN")
+  end
+--  if (status == 200) then
+--    local jsonstring = string.sub(responseText, 2, string.len(responseText) - 1)
+--    local translatorTable = json.decode(jsonstring)
+--    if (translatorTable["TranslatedText"] ~= LastTranslatedWords) then
+--      self:BroadcastSepc("CN", translatorTable["From"], translatorTable["TranslatedText"])
+--    end
+--  else
+--    print ("Translate CN response not 200")
+--  end
+--end
+
+end
+
+
+function PLUGIN:getTranslatorURL(url, word)
+  
+  
+  
+end
+
+function PLUGIN:escape(w)  
+    pattern="[^%w%d%._%-%* ]"  
+    s=string.gsub(w,pattern,function(c)  
+        local c=string.format("%%%02X",string.byte(c))  
+        return c  
+    end)  
+    s=string.gsub(s," ","+")  
+    return s  
+end  
+
+function PLUGIN:SendHelpText( netuser )
+  self:SendChatToUser( netuser, ServerName, "Type /translator for In-Game translator help." )
+end
+
+
+function PLUGIN:Help( netuser )
+  self:SendChatToUser( netuser, ServerName, "Type /en translate all non-English to English." )
+  self:SendChatToUser( netuser, ServerName, "Type /ru for русский перевод" )
+  self:SendChatToUser( netuser, ServerName, "聊天框中输入/cn自动翻译所有语言成为中文！" )
+  self:SendChatToUser( netuser, ServerName, "Type /dt to disable translator." )
+end
+
+
+function PLUGIN:SetEnglish( netuser, cmd )
+	local userID = rust.GetUserID( netuser )
+  UserLanguageSet[userID] = "EN"
+  rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "English Translator enabled. Type /translator for Translator help." .. "\"")
+end
+function PLUGIN:SetChinese(netuser, cmd )
+	local userID = rust.GetUserID( netuser )
+  UserLanguageSet[userID] = "CN"
+  rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "中文翻译系统已经启动，翻译帮助请在聊天输入/translator" .. "\"")
+end
+
+function PLUGIN:SetRU(netuser, cmd )
+	local userID = rust.GetUserID( netuser )
+  UserLanguageSet[userID] = "RU"
+  rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "Русский Перевести включен，отключить переводчик, тип /translator" .. "\"")
+end
+
+
+function PLUGIN:DisableTranslate(netuser, cmd )
+	local userID = rust.GetUserID( netuser )
+  UserLanguageSet[userID] = ""
+  rust.RunClientCommand( netuser, "chat.add \"" .. ServerName .. "\" \"" .. "Translator disabled. Type /translator for Translator help." .. "\"")
+end
